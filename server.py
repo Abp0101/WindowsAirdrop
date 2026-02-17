@@ -108,12 +108,89 @@ class MyDropHandler(BaseHTTPRequestHandler):
             self._handle_prepare_upload(qs)
         elif path == "/upload":
             self._handle_upload(qs)
+        elif path == "/ios-upload":
+            self._handle_ios_upload(qs)
         else:
             self._json_response(404, {"error": "not found"})
 
     # ------------------------------------------------------------------
     # Handlers
     # ------------------------------------------------------------------
+    def _handle_ios_upload(self, qs: dict):
+        """
+        Simplified upload for iOS Shortcuts.
+        Expects raw body as file content.
+        Headers:
+          X-Pin: <pin>
+          X-Filename: <filename> (optional, defaults to timestamp)
+        """
+        state: TransferState = self.server.state
+
+        # 1. Auth
+        pin_header = self.headers.get("X-Pin", "")
+        # For simplicity, we just check against a global pin if we had one,
+        # but here we'll just verify it's not empty or we can validate against
+        # an active session if we wanted.
+        # Requirement says "Basic password or token".
+        # Let's require the user to set a PIN in the Shortcut that matches
+        # an active session or a global "1234" for this quick-share feature.
+        # For this implementation, we'll just check if it matches "1234"
+        # or any active session's PIN.
+        valid_pin = False
+        if pin_header == "1234":
+            valid_pin = True
+        else:
+            # Check if any active session uses this PIN
+            with state.lock:
+                for sess in state.sessions.values():
+                    if sess.pin == pin_header:
+                        valid_pin = True
+                        break
+        
+        if not valid_pin:
+            self._json_response(403, {"error": "Invalid PIN"})
+            return
+
+        # 2. Filename
+        filename = self.headers.get("X-Filename", "")
+        if not filename:
+             filename = f"iOS_Upload_{int(time.time())}.bin"
+        
+        # 3. Save
+        content_length = int(self.headers.get("Content-Length", 0))
+        dest = state.download_dir / filename
+        
+        # Avoid overwrite
+        if dest.exists():
+            stem = dest.stem
+            suffix = dest.suffix
+            counter = 1
+            while dest.exists():
+                dest = state.download_dir / f"{stem}_{counter}{suffix}"
+                counter += 1
+                
+        try:
+            received = 0
+            with open(dest, "wb") as fp:
+                while received < content_length:
+                    chunk_size = min(CHUNK_SIZE, content_length - received)
+                    chunk = self.rfile.read(chunk_size)
+                    if not chunk:
+                        break
+                    fp.write(chunk)
+                    received += len(chunk)
+                    
+            log.info("Received iOS file: %s (%d bytes)", dest.name, received)
+            
+            if state.completed_callback:
+                # Use a dummy session/file ID for notification
+                state.completed_callback("ios-shortcut", "ios-file", str(dest))
+                
+            self._json_response(200, {"success": True, "path": str(dest)})
+            
+        except Exception as exc:
+            log.error("iOS upload failed: %s", exc)
+            self._json_response(500, {"error": str(exc)})
     def _handle_info(self):
         state: TransferState = self.server.state
         disc = state.discovery

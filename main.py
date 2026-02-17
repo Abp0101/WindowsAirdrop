@@ -120,8 +120,16 @@ class MyDropGUI:
 
         top = ttk.Frame(frame)
         top.pack(fill="x", padx=10, pady=(10, 4))
+        
+        # Left: Title
         ttk.Label(top, text="Nearby Devices", style="Title.TLabel").pack(side="left")
-        ttk.Button(top, text="⟳ Refresh", command=self._refresh_peers).pack(side="right")
+        
+        # Right: Buttons
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(side="right")
+        
+        ttk.Button(btn_frame, text="📱 iOS Setup", command=self._show_ios_setup).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_frame, text="⟳ Refresh", command=self._refresh_peers).pack(side="left")
 
         cols = ("name", "ip", "port")
         self.peer_tree = ttk.Treeview(frame, columns=cols, show="headings", height=10)
@@ -132,6 +140,74 @@ class MyDropGUI:
         self.peer_tree.column("ip", width=160)
         self.peer_tree.column("port", width=80)
         self.peer_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    def _show_ios_setup(self):
+        """Show a dialog with connection info and QR code for iOS Shortcut."""
+        import qrcode
+        from PIL import ImageTk
+
+        # Create dialog
+        dlg = tk.Toplevel(self.root)
+        dlg.title("iOS Shortcut Setup")
+        dlg.geometry("500x550")
+        dlg.configure(bg=self._colors["bg"])
+        
+        # Style
+        bg = self._colors["bg"]
+        fg = self._colors["fg"]
+        accent = self._colors["accent"]
+        
+        # Content
+        frame = ttk.Frame(dlg, padding=20)
+        frame.pack(fill="both", expand=True)
+        
+        ttk.Label(frame, text="Setup iOS Shortcut", font=("Segoe UI", 14, "bold"), foreground=accent).pack(pady=(0, 10))
+        
+        msg = (
+            "1. Open 'Shortcuts' on iPhone\n"
+            "2. Create a new Shortcut -> 'Get Contents of URL'\n"
+            "3. Use the URL below (Method: POST)\n"
+            "4. Add Header: 'X-Pin' = '1234'"
+        )
+        ttk.Label(frame, text=msg, justify="left").pack(anchor="w", pady=(0, 15))
+        
+        # URL
+        url = f"http://{self.discovery.local_ip}:{self.port}/ios-upload"
+        
+        url_frame = ttk.Frame(frame, style="Surface.TFrame") # fallback style
+        url_frame.pack(fill="x", pady=(0, 15))
+        e = ttk.Entry(url_frame, width=40)
+        e.insert(0, url)
+        e.configure(state="readonly")
+        e.pack(side="left", fill="x", expand=True)
+        
+        def copy_url():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(url)
+            messagebox.showinfo("Copied", "URL copied to clipboard!", parent=dlg)
+            
+        ttk.Button(url_frame, text="Copy", command=copy_url).pack(side="right", padx=(5, 0))
+
+        # QR Code
+        # We encode the URL directly. The user can scan this with a helper shortcut 
+        # or just type it. Since we can't deep-link into Shortcut creation easily,
+        # we'll just show the URL to scan/copy.
+        try:
+            qr = qrcode.QRCode(box_size=8, border=2)
+            qr.add_data(url)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # Convert to PhotoImage
+            self._qr_image = ImageTk.PhotoImage(img) # Keep ref
+            lbl_qr = ttk.Label(frame, image=self._qr_image, background="white")
+            lbl_qr.pack(pady=10)
+            ttk.Label(frame, text="(Scan to copy URL)", font=("Segoe UI", 8)).pack()
+            
+        except Exception as exc:
+            ttk.Label(frame, text=f"(QR Code error: {exc})", foreground="red").pack()
+
+        ttk.Button(frame, text="Close", command=dlg.destroy).pack(side="bottom", pady=10)
 
     # -- Send Tab --
     def _build_send_tab(self):
