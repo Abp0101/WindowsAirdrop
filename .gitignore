@@ -1,0 +1,31 @@
+# Auto-generated .gitignore
+
+# Environment & secrets
+.env
+.env.*
+*.env
+
+# Keys & certs
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+
+# Credentials
+credentials.json
+serviceAccountKey.json
+service_account.json
+*.secret
+secrets.yml
+secrets.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+__pycache__/
+.venv/
+
